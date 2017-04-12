@@ -11,6 +11,7 @@ import (
 	"archive/zip"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -21,6 +22,8 @@ import (
 	"golang.org/x/tools/godoc/vfs/zipfs"
 )
 
+// Creates new handler that serves files from path. Serves from
+// zip archive if zipOn is set.
 func New(path string, zipOn, debug bool) (http.Handler, error) {
 	var fs vfs.FileSystem
 	var filename string
@@ -67,4 +70,14 @@ func New(path string, zipOn, debug bool) (http.Handler, error) {
 		fileserver.ServeHTTP(w, req)
 	})
 	return mux, nil
+}
+
+// Same as New, but attaches a server to listener l.
+func Serve(l net.Listener, path string, zipOn, debug bool) error {
+	fs, err := New(path, zipOn, debug)
+	if err != nil {
+		return err
+	}
+	s := http.Server{Handler: fs}
+	return s.Serve(l)
 }
