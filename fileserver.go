@@ -79,7 +79,7 @@ func parsePathspec(pathspec string) (map[string]string, error) {
 func New(pathspec string, zipOn, debug bool) (http.Handler, error) {
 	var fs vfs.FileSystem
 	var aliasmap map[string]string
-
+	traverseLonelyPath := true
 	if zipOn {
 		// Serve contents of zip archive
 		rcZip, err := zip.OpenReader(pathspec)
@@ -94,10 +94,9 @@ func New(pathspec string, zipOn, debug bool) (http.Handler, error) {
 			return nil, err
 		}
 		fs = pickfs.New(vfs.OS(""), aliasmap)
-		for alias := range aliasmap {
-			if alias == "." {
-				fs = vfs.OS(".")
-			}
+		if _, ok := aliasmap["."]; ok {
+			fs = vfs.OS(".")
+			traverseLonelyPath = false
 		}
 	}
 	fileserver := http.FileServer(httpfs.New(fs))
@@ -107,12 +106,18 @@ func New(pathspec string, zipOn, debug bool) (http.Handler, error) {
 			log.Printf("Request for \"%s\"", req.URL)
 		}
 		// Traverse lonely path
-		if req.URL.String() == "/" && len(aliasmap) == 1 {
-			for alias, _ := range aliasmap {
-				if alias != "." {
-					http.Redirect(w, req, "/"+alias, http.StatusFound)
-					return
+		if traverseLonelyPath && req.URL.String() == "/" {
+			lpath := "/"
+			for {
+				fi, err := fs.ReadDir(lpath)
+				if err != nil || len(fi) != 1 {
+					break
 				}
+				lpath = filepath.Join(lpath, fi[0].Name())
+			}
+			if lpath != "/" {
+				http.Redirect(w, req, lpath, http.StatusFound)
+				return
 			}
 		}
 		fileserver.ServeHTTP(w, req)
