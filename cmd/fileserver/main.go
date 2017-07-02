@@ -4,6 +4,7 @@ import (
 	"flag"
 	"log"
 	"net"
+	"strings"
 
 	"github.com/nogoegst/fileserver"
 )
@@ -12,11 +13,8 @@ func main() {
 	var zipFlag = flag.Bool("z", false, "serve from zip archive")
 	var debugFlag = flag.Bool("debug", false, "debug")
 	flag.Parse()
-	if len(flag.Args()) != 1 {
-		log.Fatalf("Please specify exactly one path")
-	}
-	path := flag.Args()[0]
-	l, err := net.Listen("tcp4", "0.0.0.0:0")
+	path := strings.Join(flag.Args(), " ")
+	l, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		log.Fatal(err)
 	}
