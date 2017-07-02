@@ -23,15 +23,42 @@ import (
 	"golang.org/x/tools/godoc/vfs/zipfs"
 )
 
+// splitQuoted splits s by sep if it is found outside substring
+// quoted by quote.
+func splitQuoted(s string, quote, sep rune) (splitted []string) {
+	quoteFlag := false
+NewSubstring:
+	for i, c := range s {
+		if c == quote {
+			quoteFlag = !quoteFlag
+		}
+		if c == sep && !quoteFlag {
+			splitted = append(splitted, s[:i])
+			s = s[i+1:]
+			goto NewSubstring
+		}
+	}
+	return append(splitted, s)
+}
+
+const delimeter = ';'
+
+func JoinPathspec(paths []string) string {
+	return strings.Join(paths, string(delimeter))
+}
+
 func parsePathspec(pathspec string) (map[string]string, error) {
 	aliasmap := make(map[string]string)
-	paths := strings.Split(pathspec, " ")
+	paths := splitQuoted(pathspec, '"', delimeter)
 	for _, path := range paths {
 		spath := strings.Split(path, ":")
 		var alias string
 		switch len(spath) {
 		case 1:
-			_, alias = filepath.Split(spath[0])
+			_, alias = filepath.Split(filepath.Clean(spath[0]))
+			if alias == "." && len(paths) != 1 {
+				return nil, errors.New("current working dir doesnt't have an alias")
+			}
 		case 2:
 			alias = spath[1]
 		default:
@@ -41,6 +68,7 @@ func parsePathspec(pathspec string) (map[string]string, error) {
 		if err != nil {
 			return nil, err
 		}
+		alias = filepath.Clean(alias)
 		aliasmap[alias] = abs
 	}
 	return aliasmap, nil
@@ -66,6 +94,11 @@ func New(pathspec string, zipOn, debug bool) (http.Handler, error) {
 			return nil, err
 		}
 		fs = pickfs.New(vfs.OS(""), aliasmap)
+		for alias := range aliasmap {
+			if alias == "." {
+				fs = vfs.OS(".")
+			}
+		}
 	}
 	fileserver := http.FileServer(httpfs.New(fs))
 	mux := http.NewServeMux()
@@ -75,9 +108,11 @@ func New(pathspec string, zipOn, debug bool) (http.Handler, error) {
 		}
 		// Traverse lonely path
 		if req.URL.String() == "/" && len(aliasmap) == 1 {
-			for filename, _ := range aliasmap {
-				http.Redirect(w, req, "/"+filename, http.StatusFound)
-				return
+			for alias, _ := range aliasmap {
+				if alias != "." {
+					http.Redirect(w, req, "/"+alias, http.StatusFound)
+					return
+				}
 			}
 		}
 		fileserver.ServeHTTP(w, req)
